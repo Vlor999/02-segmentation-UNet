@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments & env
+.venv
+.env
+
+# Data
+04-dataset
+
+# Docs
+docs/*.png

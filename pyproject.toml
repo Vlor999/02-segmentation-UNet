@@ -1,0 +1,17 @@
+[project]
+name = "02-segmentation"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "imutils>=0.5.4",
+    "loguru>=0.7.3",
+    "matplotlib>=3.10.7",
+    "opencv-python>=4.12.0.88",
+    "pyqt5>=5.15.11",
+    "scikit-learn>=1.7.2",
+    "torch>=2.9.0",
+    "torchvision>=0.24.0",
+    "tqdm>=4.67.1",
+]
