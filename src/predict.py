@@ -102,7 +102,7 @@ if __name__ == '__main__':
         
         # load our model from disk and flash it to the current device
         print("[INFO] load up model...")
-        unet = torch.load(config.BEST_MODEL_PATH).to(config.DEVICE)
+        unet = torch.load(config.BEST_MODEL_PATH, weights_only=False).to(config.DEVICE)
 
         # iterate over the randomly selected test image paths
         for path in imagePaths:

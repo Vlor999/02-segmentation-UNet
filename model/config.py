@@ -3,7 +3,7 @@ import torch
 import os
 
 # salines
-#BASE_PATH = "/matieres/5MMVORF/03-dataset"
+# BASE_PATH = "./03-dataset"
 # dancers
 BASE_PATH = "./04-dataset/"
 IMAGES_PATH = os.path.join(BASE_PATH, "images")
@@ -49,7 +49,7 @@ NUM_LEVELS = 3
 # initialize learning rate, number of epochs to train for, and the
 # batch size
 INIT_LR = 0.001
-NUM_EPOCHS = 20
+NUM_EPOCHS = 70
 BATCH_SIZE = 256
 
 # define the input image dimensions

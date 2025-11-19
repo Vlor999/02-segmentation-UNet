@@ -12,6 +12,7 @@ wheels/
 
 # Data
 04-dataset
+03-dataset
 
 # Docs
 docs/*.png

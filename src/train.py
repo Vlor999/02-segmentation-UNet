@@ -96,6 +96,9 @@ if __name__ == '__main__':
 
     # loop over epochs
     logger.debug("[INFO] training the network...")
+    best_model = model
+    bestAvgTrainLoss = float("inf")
+    bestAvgTestLoss = float("inf")
     startTime = time.time()
     for e in tqdm(range(config.NUM_EPOCHS)):
         # set the model in training mode
@@ -140,6 +143,13 @@ if __name__ == '__main__':
                 # calculate the average training and validation loss
                 avgTrainLoss = totalTrainLoss / trainSteps
                 avgTestLoss = totalTestLoss / testSteps
+        if avgTestLoss <= bestAvgTestLoss:
+            if avgTestLoss != bestAvgTestLoss or (avgTestLoss == bestAvgTestLoss and avgTrainLoss <= bestAvgTrainLoss):
+                best_model = model
+                bestAvgTestLoss = avgTestLoss
+                bestAvgTrainLoss = avgTrainLoss
+                logger.info(f"Best model updated. Average test loss: {bestAvgTestLoss}, Average train loss: {bestAvgTrainLoss}")
+
         
         # update our training history
         H["train_loss"].append(avgTrainLoss.cpu().detach().numpy())
@@ -158,8 +168,8 @@ if __name__ == '__main__':
     plt.xlabel("epoch #")
     plt.ylabel("loss")
     plt.legend()
-    # plt.savefig(config.PLOT_PATH)
+    plt.savefig(config.PLOT_PATH)
     plt.show()
 
     # serialize the model to disk
-    torch.save(cnnet, config.BEST_MODEL_PATH)
+    torch.save(best_model, config.BEST_MODEL_PATH)
