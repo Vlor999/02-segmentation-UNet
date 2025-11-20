@@ -58,3 +58,4 @@ INPUT_IMAGE_HEIGHT = 128
 
 # define threshold to filter weak predictions
 THRESHOLD = 0.5
+MODEL_NAME = "UNet"
