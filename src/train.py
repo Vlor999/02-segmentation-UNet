@@ -20,24 +20,30 @@ import torch
 import time
 import os
 from loguru import logger
+from src.param_handler import parse_arguments
 
 from PyQt5.QtCore import QLibraryInfo
 # from PySide2.QtCore import QLibraryInfo
 
-if __name__ == '__main__':
-    os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = QLibraryInfo.location(QLibraryInfo.PluginsPath)
 
-    if(not(os.path.exists(config.BASE_OUTPUT))):
+if __name__ == "__main__":
+    parse_arguments()
+    os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = QLibraryInfo.location(
+        QLibraryInfo.PluginsPath
+    )
+
+    if not (os.path.exists(config.BASE_OUTPUT)):
         os.mkdir(config.BASE_OUTPUT)
-        
+
     # load the image and mask filepaths in a sorted manner
     imagePaths = sorted(list(paths.list_images(config.IMAGES_PATH)))
     maskPaths = sorted(list(paths.list_images(config.MASKS_PATH)))
 
     # partition the data into training and testing splits using 85% of
     # the data for training and the remaining 15% for testing
-    split = train_test_split(imagePaths, maskPaths,
-                             test_size=config.TEST_SPLIT, random_state=42)
+    split = train_test_split(
+        imagePaths, maskPaths, test_size=config.TEST_SPLIT, random_state=42
+    )
 
     # unpack the data split
     (trainImages, testImages) = split[:2]
@@ -46,42 +52,71 @@ if __name__ == '__main__':
     # write the testing image paths to disk so that we can use then
     # when evaluating/testing our model
     logger.debug("[INFO] saving testing image paths...")
-    f = open(config.TEST_PATH,"w")
+    f = open(config.TEST_PATH, "w")
     f.write("\n".join(testImages))
     f.close()
 
     # define transformations
-    transforms = transforms.Compose([transforms.ToPILImage(),transforms.Resize((config.INPUT_IMAGE_HEIGHT,config.INPUT_IMAGE_WIDTH)),transforms.ToTensor()])
+    transforms = transforms.Compose(
+        [
+            transforms.ToPILImage(),
+            transforms.Resize((config.INPUT_IMAGE_HEIGHT, config.INPUT_IMAGE_WIDTH)),
+            transforms.ToTensor(),
+        ]
+    )
 
     # create the train and test datasets
-    trainDS = SegmentationDataset(imagePaths=trainImages, maskPaths=trainMasks,transforms=transforms)
-    testDS = SegmentationDataset(imagePaths=testImages, maskPaths=testMasks,transforms=transforms)
+    trainDS = SegmentationDataset(
+        imagePaths=trainImages, maskPaths=trainMasks, transforms=transforms
+    )
+    testDS = SegmentationDataset(
+        imagePaths=testImages, maskPaths=testMasks, transforms=transforms
+    )
     logger.debug(f"[INFO] found {len(trainDS)} examples in the training set...")
     logger.debug(f"[INFO] found {len(testDS)} examples in the test set...")
 
     # create the training and test data loaders
-    trainLoader = DataLoader(trainDS, shuffle=True,batch_size=config.BATCH_SIZE, pin_memory=config.PIN_MEMORY,num_workers=config.NUM_WORKERS)
-    testLoader = DataLoader(testDS, shuffle=False,batch_size=config.BATCH_SIZE, pin_memory=config.PIN_MEMORY,num_workers=config.NUM_WORKERS)
+    trainLoader = DataLoader(
+        trainDS,
+        shuffle=True,
+        batch_size=config.BATCH_SIZE,
+        pin_memory=config.PIN_MEMORY,
+        num_workers=config.NUM_WORKERS,
+    )
+    testLoader = DataLoader(
+        testDS,
+        shuffle=False,
+        batch_size=config.BATCH_SIZE,
+        pin_memory=config.PIN_MEMORY,
+        num_workers=config.NUM_WORKERS,
+    )
 
     # initialize the UNet or HourGlass model
-    # model = SimpleConv()
-    # model = HourGlass((3,16,32,64),(64,32,16,1))
-    model = UNet((3,16,32,64),(64,32,16,1))
+    if config.MODEL_NAME == "UNet":
+        model = UNet((3, 16, 32, 64), (64, 32, 16, 1))
+    elif config.MODEL_NAME == "HourGlass":
+        model = HourGlass((3, 16, 32, 64), (64, 32, 16, 1))
+    else:
+        model = SimpleConv()
     cnnet = model.to(config.DEVICE)
     logger.debug(model)
-    
+
     # Print bottleneck size for HourGlass model
     if isinstance(model, HourGlass):
         with torch.no_grad():
             # Create a dummy input to check bottleneck size
-            dummy_input = torch.randn(1, 3, config.INPUT_IMAGE_HEIGHT, config.INPUT_IMAGE_WIDTH).to(config.DEVICE)
+            dummy_input = torch.randn(
+                1, 3, config.INPUT_IMAGE_HEIGHT, config.INPUT_IMAGE_WIDTH
+            ).to(config.DEVICE)
             x = dummy_input
             # Pass through encoder
             for block in cnnet.enc_blocks:
                 x = block(x)
                 x = cnnet.pool(x)
             logger.info(f"[INFO] Bottleneck size: {x.shape}")
-            logger.info(f"[INFO] Bottleneck dimensions: Batch={x.shape[0]}, Channels={x.shape[1]}, Height={x.shape[2]}, Width={x.shape[3]}")
+            logger.info(
+                f"[INFO] Bottleneck dimensions: Batch={x.shape[0]}, Channels={x.shape[1]}, Height={x.shape[2]}, Width={x.shape[3]}"
+            )
 
     # initialize loss function and optimizer
     lossFunc = BCEWithLogitsLoss()
@@ -100,70 +135,102 @@ if __name__ == '__main__':
     bestAvgTrainLoss = float("inf")
     bestAvgTestLoss = float("inf")
     startTime = time.time()
-    for e in tqdm(range(config.NUM_EPOCHS)):
-        # set the model in training mode
-        cnnet.train()
+    with tqdm(total=config.NUM_EPOCHS, desc="Training") as bar:
+        for e in range(config.NUM_EPOCHS):
+            # set the model in training mode
+            cnnet.train()
 
-        # initialize the total training and validation loss
-        totalTrainLoss = 0
-        totalTestLoss = 0
+            # initialize the total training and validation loss
+            totalTrainLoss = 0
+            totalTestLoss = 0
 
-        # loop over the training set
-        for (i, (x, y)) in enumerate(trainLoader):
-            # send the input to the device
-            (x, y) = (x.to(config.DEVICE), y.to(config.DEVICE))
-
-            # perform a forward pass and calculate the training loss
-            pred = cnnet(x)
-            loss = lossFunc(pred, y)
-
-            # first, zero out any previously accumulated gradients, then
-            # perform backpropagation, and then update model parameters
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-
-            # add the loss to the total training loss so far
-            totalTrainLoss += loss
-
-        # switch off autograd
-        with torch.no_grad():
-           # set the model in evaluation mode
-           cnnet.eval()
-           #
-           # loop over the validation set
-           for (x, y) in testLoader:
+            # loop over the training set
+            for i, (x, y) in enumerate(trainLoader):
                 # send the input to the device
                 (x, y) = (x.to(config.DEVICE), y.to(config.DEVICE))
-                #
-                # make the predictions and calculate the validation loss
-                pred = cnnet(x)
-                totalTestLoss += lossFunc(pred, y)
-                #
-                # calculate the average training and validation loss
-                avgTrainLoss = totalTrainLoss / trainSteps
-                avgTestLoss = totalTestLoss / testSteps
-        if avgTestLoss <= bestAvgTestLoss:
-            if avgTestLoss != bestAvgTestLoss or (avgTestLoss == bestAvgTestLoss and avgTrainLoss <= bestAvgTrainLoss):
-                best_model = model
-                bestAvgTestLoss = avgTestLoss
-                bestAvgTrainLoss = avgTrainLoss
-                logger.info(f"Best model updated. Average test loss: {bestAvgTestLoss}, Average train loss: {bestAvgTrainLoss}")
 
-        
-        # update our training history
-        H["train_loss"].append(avgTrainLoss.cpu().detach().numpy())
-        H["test_loss"].append(avgTestLoss.cpu().detach().numpy())           
+                # perform a forward pass and calculate the training loss
+                pred = cnnet(x)
+                loss = lossFunc(pred, y)
+
+                # first, zero out any previously accumulated gradients, then
+                # perform backpropagation, and then update model parameters
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+
+                # add the loss to the total training loss so far
+                totalTrainLoss += loss
+
+            # switch off autograd
+            with torch.no_grad():
+                # set the model in evaluation mode
+                cnnet.eval()
+                #
+                # loop over the validation set
+                for x, y in testLoader:
+                    # send the input to the device
+                    (x, y) = (x.to(config.DEVICE), y.to(config.DEVICE))
+                    #
+                    # make the predictions and calculate the validation loss
+                    pred = cnnet(x)
+                    totalTestLoss += lossFunc(pred, y)
+                    #
+                    # calculate the average training and validation loss
+                    avgTrainLoss = totalTrainLoss / trainSteps
+                    avgTestLoss = totalTestLoss / testSteps
+            updated = False
+            if avgTestLoss <= bestAvgTestLoss:
+                if avgTestLoss != bestAvgTestLoss or (
+                    avgTestLoss == bestAvgTestLoss and avgTrainLoss <= bestAvgTrainLoss
+                ):
+                    best_model = model
+                    bestAvgTestLoss = avgTestLoss
+                    bestAvgTrainLoss = avgTrainLoss
+                    updated = True
+
+            # update our training history
+            H["train_loss"].append(avgTrainLoss.cpu().detach().numpy())
+            H["test_loss"].append(avgTestLoss.cpu().detach().numpy())
+
+            # update progress bar
+            bar.set_postfix(
+                train_loss=f"{avgTrainLoss:.3f}",
+                test_loss=f"{avgTestLoss:.3f}",
+                best_test=f"{bestAvgTestLoss:.3f}",
+                updated="Yes" if updated else "No",
+            )
+            bar.update(1)
 
     # display the total time needed to perform the training
     endTime = time.time()
-    logger.debug("[INFO] total time taken to train the model: {:.2f}s".format(endTime - startTime))
+    logger.debug(
+        "[INFO] total time taken to train the model: {:.2f}s".format(
+            endTime - startTime
+        )
+    )
 
     # plot the training loss and accuracy
     plt.style.use("ggplot")
     plt.figure()
-    plt.plot(H['train_loss'],'o', ls='-', ms=4, markevery=None, linewidth=2.0,label='train loss')
-    plt.plot(H['test_loss'],'o', ls='-', ms=4, markevery=None, linewidth=2.0,label='test loss')
+    plt.plot(
+        H["train_loss"],
+        "o",
+        ls="-",
+        ms=4,
+        markevery=None,
+        linewidth=2.0,
+        label="train loss",
+    )
+    plt.plot(
+        H["test_loss"],
+        "o",
+        ls="-",
+        ms=4,
+        markevery=None,
+        linewidth=2.0,
+        label="test loss",
+    )
     plt.title("training loss on dataset")
     plt.xlabel("epoch #")
     plt.ylabel("loss")
