@@ -16,3 +16,5 @@ wheels/
 
 # Docs
 docs/*.png
+
+.DS_Store
