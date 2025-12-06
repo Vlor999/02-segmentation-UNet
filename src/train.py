@@ -240,3 +240,32 @@ if __name__ == "__main__":
 
     # serialize the model to disk
     torch.save(best_model, config.BEST_MODEL_PATH)
+
+    best_model.eval()
+
+    # 2. Créer un "dummy input" (entrée factice) qui correspond aux dimensions d'entrée
+    # Forme : (Batch_Size, Channels, Height, Width)
+    dummy_input = torch.randn(
+        1, 3, config.INPUT_IMAGE_HEIGHT, config.INPUT_IMAGE_WIDTH
+    ).to(config.DEVICE)
+
+    # 3. Définir le chemin de sortie
+    onnx_path = os.path.join(config.BASE_OUTPUT, "model.onnx")
+
+    # 4. Lancer l'exportation
+    torch.onnx.export(
+        best_model,               # Le modèle à exporter
+        dummy_input,              # L'entrée factice pour le traçage
+        onnx_path,                # Où sauvegarder le fichier
+        export_params=True,       # Sauvegarder les poids entraînés
+        opset_version=14,         # Version ONNX (11 ou 12 sont standards)
+        do_constant_folding=True, # Optimisation (plie les constantes)
+        input_names=['input'],    # Nom du nœud d'entrée
+        output_names=['output'],  # Nom du nœud de sortie
+        dynamic_axes={            # Permet une taille de batch variable
+            'input': {0: 'batch_size'},
+            'output': {0: 'batch_size'}
+        }
+    )
+    
+    logger.info(f"[INFO] Model exported to {onnx_path}")
